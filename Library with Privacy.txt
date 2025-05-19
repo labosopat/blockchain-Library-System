@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract P2PTransferContract {
+    
+    struct Resource {
+        uint256 id;
+        string title;
+        address owner;
+        bool available;
+    }
+    
+    struct Transfer {
+        uint256 id;
+        address sender;
+        address recipient;
+        uint256 resourceId;
+        uint256 expiry;
+        bool active;
+    }
+    
+    mapping(uint256 => Resource) public resources;
+    
+    mapping(uint256 => Transfer) public transfers;
+    
+    uint256 public transferCount;
+    
+    event TransferInitiated(
+        uint256 indexed transferId,
+        address indexed sender,
+        address indexed recipient,
+        uint256 resourceId
+    );
+    
+    event TransferCompleted(
+        uint256 indexed transferId,
+        address indexed sender,
+        address indexed recipient,
+        uint256 resourceId
+    );
+    
+    modifier onlyAvailable(uint256 resourceId) {
+        require(resources[resourceId].available, "Resource not available");
+        _;
+    }
+    
+    constructor() {
+        resources[1] = Resource(1, "Sample E-Book", msg.sender, true);
+    }
+    function initiateTransfer(
+        address recipient,
+        uint256 resourceId,
+        uint256 duration
+    ) external onlyAvailable(resourceId) returns (uint256) {
+        require(recipient != address(0), "Invalid recipient");
+        require(resources[resourceId].owner == msg.sender, "Not resource owner");
+        
+        transferCount++;
+        uint256 transferId = transferCount;
+        
+        transfers[transferId] = Transfer({
+            id: transferId,
+            sender: msg.sender,
+            recipient: recipient,
+            resourceId: resourceId,
+            expiry: block.timestamp + duration,
+            active: true
+        });
+        
+        resources[resourceId].available = false;
+        
+        emit TransferInitiated(transferId, msg.sender, recipient, resourceId);
+        
+        return transferId;
+    }
+    
+    function completeTransfer(
+        uint256 transferId,
+        address sender,
+        address recipient
+    ) external {
+        Transfer storage transfer = transfers[transferId];
+        require(transfer.active, "Transfer not active");
+        require(transfer.sender == sender, "Invalid sender");
+        require(transfer.recipient == recipient, "Invalid recipient");
+        require(block.timestamp < transfer.expiry, "Transfer expired");
+        
+        transfer.active = false;
+        
+        emit TransferCompleted(transferId, sender, recipient, transfer.resourceId);
+    }
+    function revokeAccess(uint256 transferId) external {
+        Transfer storage transfer = transfers[transferId];
+        require(transfer.active, "Transfer not active");
+        require(block.timestamp >= transfer.expiry || msg.sender == transfer.sender, "Cannot revoke");
+        
+        transfer.active = false;
+        resources[transfer.resourceId].available = true;
+    }
+}
